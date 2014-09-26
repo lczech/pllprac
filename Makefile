@@ -8,35 +8,40 @@ PROG = pllprac
 #   Compiler Options
 # --------------------------------
 
-# Use profiling?
-#PROF    = -g -pg
+# Debug & Profiling (comment out if not needed)
+DBG     = -g -pg
 
-# Which warnings?
+# Warning flags
 WARN    = -Wall -Wextra -pedantic-errors
 
 # Compiler flags
 CC      = g++
-CCFLAGS = -I/usr/local/include -O3 $(WARN) $(PROF)
-LDFLAGS = -I/usr/local/include -L/usr/local/lib/ -lpll-sse3 -lm
+CCFLAGS = -std=c++11 -O1 $(WARN) $(DBG)
+LDFLAGS = -lpll-sse3 -lm
+
+# Includes, if needed
+# -I/usr/local/include
+# -L/usr/local/lib
 
 # --------------------------------
 #   Make rules
 # --------------------------------
 
-SRCS =$(wildcard src/*.cpp)
+SRCS = $(wildcard src/*.cpp)
 OBJS = $(SRCS:.cpp=.o)
 
-all: $(SRCS) $(PROG)
-	@echo "\n========== All       =========="
+all: $(PROG)
+	@echo "\n==========   Done    =========="
 
 $(PROG): $(OBJS)
-	@echo "\n========== Linking   =========="
+	@echo "\n==========  Linking  =========="
 	@echo "Objects: $(OBJS)\n"
 	$(CC) $(OBJS) $(LDFLAGS) -o $@
 
 .cpp.o:
 	@echo "\n========== Compiling =========="
-	@echo "Sources: $(SRCS)\n"
+	@echo "File: $< > $@\n"
+#	@echo "Sources: $(SRCS)"
 	$(CC) -c $(CCFLAGS) $< -o $@
 
 clean:
