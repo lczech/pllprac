@@ -1,6 +1,8 @@
-#include <string>
 #include <iostream>
 #include <fstream>
+#include <string>
+#include <vector>
+#include <algorithm>
 #include <assert.h>
 
 #include "pll/pll.h"
@@ -21,7 +23,8 @@ int main (int argc, char* argv[])
     pllAlignmentData* alignmentData = pllParseAlignmentFile (PLL_FORMAT_PHYLIP, alignmentFilename.c_str());
 
     // create a partition file containing only one partition
-    // (PLL cannot take the partition via string parameter)
+    // (PLL does not provide a default "use all" partition and
+    // cannot take the partition via string parameter)
     string partitionFilename = alignmentFilename + ".partition";
     ofstream partitionFile (partitionFilename.c_str());
     if (!partitionFile.is_open()) {
@@ -41,7 +44,10 @@ int main (int argc, char* argv[])
     partitionList* partitions = pllPartitionsCommit (parts, alignmentData);
     pllAlignmentRemoveDups (alignmentData, partitions);
 
-
+    // optimize everything
+    partitions->partitionData[0]->optimizeBaseFrequencies   = true;
+    partitions->partitionData[0]->optimizeAlphaParameter    = true;
+    partitions->partitionData[0]->optimizeSubstitutionRates = true;
 
     // set PLL instance attributes
     pllInstanceAttr attr;
@@ -59,25 +65,20 @@ int main (int argc, char* argv[])
     pllTreeInitTopologyForAlignment (inst, alignmentData);
     pllLoadAlignment (inst, alignmentData, partitions, PLL_DEEP_COPY);
 
-    cout << partitions << endl;
-    cout << partitions->numberOfPartitions << endl;
-    cout << partitions->partitionData[0]->lower << endl;
-    cout << partitions->partitionData[0]->upper << endl;
-
     // create a tree
     pllComputeRandomizedStepwiseAdditionParsimonyTree (inst, partitions);
 
-    partitions->partitionData[0]->optimizeBaseFrequencies   = true;
-    partitions->partitionData[0]->optimizeAlphaParameter    = true;
-    partitions->partitionData[0]->optimizeSubstitutionRates = true;
-
-    pllOptimizeModelParameters (inst, partitions, 0.1);
+    //double* empiricalFrequencies;
+    //empiricalFrequencies = (double*) malloc((size_t) 4 * sizeof(double));
+    //pllInitModel (inst, &empiricalFrequencies, partitions);
+    pllInitModel (inst, partitions, alignmentData);
 
     //pllSetSubstitutionRateMatrixSymmetries (char *string, partitionList * pr, int model);
+    pllOptimizeModelParameters (inst, partitions, 0.1);
+    pllDestroyInstance (inst);
 
     // Destroy the PLL instance
     pllAlignmentDataDestroy (alignmentData);
     pllQueuePartitionsDestroy (&parts); // for some reason, PLL expects **pQueue here...
-    //pllDestroyInstance (inst);
     return 0;
 }
