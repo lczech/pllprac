@@ -1,4 +1,5 @@
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -10,25 +11,26 @@
 #include "main.h"
 
 using namespace std;
-bool verbose = false; // for user output
 
-double analyzeModel(string alignmentFilename, string partitionFilename, string model, BaseFrequencyType bf)
+/**
+ * Calculate the likelihood given a particular substitution model.
+ *
+ * @param   alignmentFilename
+ * @param   parts
+ * @param   model
+ * @param   bf
+ * @param   likelihood
+ * @param   substRates
+ */
+void analyzeModel (
+    string alignmentFilename, pllQueue* parts, string model, BaseFrequencyType bf,
+    double* likelihood, double** substRates
+    )
 {
     //model = "0,0,1,2,0,0";
 
-    // user output
-    if (verbose) {
-        cout << endl << "=============================" << endl;
-        cout << "     Model " << model << endl << endl;
-    }
-
-    // parse the input files
+    // parse the alignment file (PLL cannot reuse the alignment data...)
     pllAlignmentData* alignmentData = pllParseAlignmentFile (PLL_FORMAT_PHYLIP, alignmentFilename.c_str());
-    pllQueue* parts = pllPartitionParse (partitionFilename.c_str());
-    if (pllPartitionsValidate (parts, alignmentData) == PLL_FALSE) {
-        cout << "Something is wrong with the partitions, aborting." << endl;
-        exit (0);
-    }
 
     // create partitions object, optimizing everything
     partitionList* partitions = pllPartitionsCommit (parts, alignmentData);
@@ -67,29 +69,56 @@ double analyzeModel(string alignmentFilename, string partitionFilename, string m
     }
     initReversibleGTR (inst, partitions, 0);
     pllOptimizeModelParameters (inst, partitions, 0.1);
-    double likelihood = inst->likelihood;
-
-    if (verbose) {
-        cout << "Substitution rates: " << endl;
-        for (int i = 0; i < 6; i++) {
-            cout << "Rate " << i << ": " << partitions->partitionData[0]->substRates[i] << endl;
-        }
-        cout << endl;
-    }
+    *likelihood = inst->likelihood;
+    *substRates = partitions->partitionData[0]->substRates;
 
     // destroy the PLL instance
-    pllAlignmentDataDestroy     (alignmentData);
-    pllQueuePartitionsDestroy   (&parts); // for some reason, PLL expects **pQueue here...
-    pllPartitionsDestroy        (inst, &partitions); // again, expects a **partitionList here
-    pllDestroyInstance          (inst);
+    pllAlignmentDataDestroy (alignmentData);
+    pllPartitionsDestroy    (inst, &partitions); // again, expects a **partitionList here
+    pllDestroyInstance      (inst);
+}
 
-    return likelihood;
+/**
+ * Prints a 4x4 matrix of NT substitution rates
+ *
+ * @param sr    Subst rate matrix of type double[6]
+ */
+void printSubstMatrix (double* sr)
+{
+    cout << fixed << setprecision(3) << setw(12) << -(sr[0]+sr[1]+sr[2]);
+    cout << fixed << setprecision(3) << setw(12) << sr[0];
+    cout << fixed << setprecision(3) << setw(12) << sr[1];
+    cout << fixed << setprecision(3) << setw(12) << sr[2];
+    cout << endl;
+
+    cout << fixed << setprecision(3) << setw(12) << sr[0];
+    cout << fixed << setprecision(3) << setw(12) << -(sr[0]+sr[3]+sr[4]);
+    cout << fixed << setprecision(3) << setw(12) << sr[3];
+    cout << fixed << setprecision(3) << setw(12) << sr[4];
+    cout << endl;
+
+    cout << fixed << setprecision(3) << setw(12) << sr[1];
+    cout << fixed << setprecision(3) << setw(12) << sr[3];
+    cout << fixed << setprecision(3) << setw(12) << -(sr[1]+sr[3]+sr[5]);
+    cout << fixed << setprecision(3) << setw(12) << sr[5];
+    cout << endl;
+
+    cout << fixed << setprecision(3) << setw(12) << sr[2];
+    cout << fixed << setprecision(3) << setw(12) << sr[4];
+    cout << fixed << setprecision(3) << setw(12) << sr[5];
+    cout << fixed << setprecision(3) << setw(12) << -(sr[2]+sr[4]+sr[5]);
+    cout << endl;
+}
+
+void evaluateTree()
+{
+    //pllTreeEvaluate ( pllInstance *tr, partitionList *pr, int maxSmoothIterations );
 }
 
 int main (int argc, char* argv[])
 {
-    // option for using empirical vs ML base freqs
-    BaseFrequencyType bf = ML;
+    BaseFrequencyType   bf      = ML;       // option for using empirical vs ML base freqs
+    bool                verbose = false;    // for user output
 
     // parse command line arguments
     int c;
@@ -148,12 +177,30 @@ int main (int argc, char* argv[])
     }
     cout << "Writing partition file '" << partitionFilename << "'." << endl;
     partitionFile << "DNA, Partition = 1-" << alignmentData->sequenceLength << "\n";
-    int sequenceLength = alignmentData->sequenceLength;
     partitionFile.close();
+
+    // create a partition queue from the alignment
+    int sequenceLength = alignmentData->sequenceLength;
+    pllQueue* parts = pllPartitionParse (partitionFilename.c_str());
+    if (pllPartitionsValidate (parts, alignmentData) == PLL_FALSE) {
+        cout << "Something is wrong with the partitions, aborting." << endl;
+        exit (0);
+    }
     pllAlignmentDataDestroy (alignmentData);
 
     // prepare values for main loop
-    double likelihood;
+    double  likelihood;
+    double* substRates = NULL;
+    double  bestL = 1.0;    // best likelihood
+    string  bestM;          // best model
+    double  bestS[6];          // best substitution matrix
+
+    // user output
+    cout << "Analysing all " << MODEL_STRINGS.size() << " substitution models..." << endl;
+    if (verbose) {
+        cout << endl << "Model         Likelihood          AIC          BIC" << endl;
+        cout         << "----------- ------------ ------------ ------------" << endl;
+    }
 
     // try out every substitution model to find the best one
     // (PLL cannot reuse the data, so we have to do all the input file reading
@@ -162,14 +209,36 @@ int main (int argc, char* argv[])
         // first, I broke down the process into smaller steps, but the objects
         // are so closely interlinked and the init procedures appear all over
         // the code, so that is was even a greater mess then this long func
-        likelihood = analyzeModel(alignmentFilename, partitionFilename, model, bf);
+        analyzeModel(alignmentFilename, parts, model, bf, &likelihood, &substRates);
 
+        // user output
         if (verbose) {
-            cout << "Likelihood " << likelihood << endl;
-            cout << "AIC        " << AIC(likelihood, 6) << endl;
-            cout << "BIC        " << BIC(likelihood, 6, sequenceLength) << endl;
+            cout << model << " ";
+            cout << fixed << setprecision(3) << setw(12) << likelihood << " ";
+            cout << fixed << setprecision(3) << setw(12) << AIC(likelihood, 6) << " ";
+            cout << fixed << setprecision(3) << setw(12) << BIC(likelihood, 6, sequenceLength) << endl;
+        }
+
+        // store best model (AIC and BIC are monotonous over the likelihood
+        // for fixed input and parameter count, so we do not need them here)
+        if (bestL > 0.0  ||  likelihood > bestL) {
+            bestL = likelihood;
+            bestM = model;
+            for (int i = 0; i < 6; i++) {
+                bestS[i] = substRates[i];
+            }
         }
     }
 
+    // user output
+    cout << "...done." << endl << endl;
+    cout << "Best model: " << bestM << endl;
+    cout << "Likelihood: " << bestL << endl;
+    cout << "AIC:        " << AIC(bestL, 6) << endl;
+    cout << "BIC:        " << BIC(bestL, 6, sequenceLength) << endl;
+    cout << endl << "Substitution matrix:" << endl;
+    printSubstMatrix(bestS);
+
+    pllQueuePartitionsDestroy (&parts); // for some reason, PLL expects **pQueue here...
     return 0;
 }
