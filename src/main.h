@@ -9,6 +9,10 @@ enum BaseFrequencyType {
     ML
 };
 
+// for testing
+//std::vector<std::string> MODEL_STRINGS = { "0,1,2,3,4,0" };
+
+///*
 std::vector<std::string> MODEL_STRINGS = {
     "0,0,0,0,0,0", "0,0,0,0,0,1", "0,0,0,0,1,0", "0,0,0,0,1,1", "0,0,0,0,1,2",
     "0,0,0,1,0,0", "0,0,0,1,0,1", "0,0,0,1,0,2", "0,0,0,1,1,0", "0,0,0,1,1,1",
@@ -52,6 +56,7 @@ std::vector<std::string> MODEL_STRINGS = {
     "0,1,2,3,3,3", "0,1,2,3,3,4", "0,1,2,3,4,0", "0,1,2,3,4,1", "0,1,2,3,4,2",
     "0,1,2,3,4,3", "0,1,2,3,4,4", "0,1,2,3,4,5"
 };
+//*/
 
 // see http://en.wikipedia.org/wiki/Akaike_information_criterion
 inline double AIC (double loglikelihood, int k)
