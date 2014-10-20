@@ -6,8 +6,7 @@ pllprac
     using the Phylogenetic Likelihood Library (PLL).
 
 **SYNOPSIS**  
-    `pllprac [-e|m] [-v] phylip_file`  
-    `mpirun -np threads pllprac [-e|m] [-v] phylip_file` (if compiled via `make mpi`)
+    `pllprac [-e|m] [-v] phylip_file`
 
 **DESCRIPTION**  
     This program takes a phylip multiple sequence alignment file
