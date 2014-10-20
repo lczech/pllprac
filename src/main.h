@@ -10,10 +10,14 @@ enum BaseFrequencyType {
 };
 
 // for testing
-//std::vector<std::string> MODEL_STRINGS = { "0,1,2,3,4,0" };
+//std::vector<std::string> MODELS = {
+    //"0,0,0,0,0,0", "0,0,0,0,0,1", "0,0,0,0,1,0", "0,0,0,0,1,1", "0,0,0,0,1,2",
+    //"0,0,0,1,0,0", "0,0,0,1,0,1", "0,0,0,1,0,2", "0,0,0,1,1,0", "0,0,0,1,1,1",
+    //"0,0,0,1,1,2", "0,0,0,1,2,0", "0,0,0,1,2,1", "0,0,0,1,2,2", "0,0,0,1,2,3",
+//};
 
 ///*
-std::vector<std::string> MODEL_STRINGS = {
+std::vector<std::string> MODELS = {
     "0,0,0,0,0,0", "0,0,0,0,0,1", "0,0,0,0,1,0", "0,0,0,0,1,1", "0,0,0,0,1,2",
     "0,0,0,1,0,0", "0,0,0,1,0,1", "0,0,0,1,0,2", "0,0,0,1,1,0", "0,0,0,1,1,1",
     "0,0,0,1,1,2", "0,0,0,1,2,0", "0,0,0,1,2,1", "0,0,0,1,2,2", "0,0,0,1,2,3",
@@ -69,5 +73,13 @@ inline double BIC (double loglikelihood, int k, int n)
 {
     return (double) k * log((double) n) - 2 * loglikelihood;
 }
+
+typedef struct {
+    double likelihood;
+    double AIC;
+    double BIC;
+    double rates[6];
+    char   model[12];
+} ModelScore;
 
 #endif

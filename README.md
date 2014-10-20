@@ -28,6 +28,8 @@ ENVIRONMENT
         In order to run this program, you need an installation
         of the Phylogenetic Likelihood Library (PLL), which can be
         obtained from http://www.libpll.org/
+    MPI
+        The program can be compiled with MPI support via "make mpi".
 
 AUTHOR
     Lucas Czech <lucas.czech@h-its.org>

@@ -1,3 +1,4 @@
+// necessary includes
 #include <iostream>
 #include <iomanip>
 #include <fstream>
@@ -8,13 +9,114 @@
 #include <assert.h>
 #include <unistd.h>
 
+// optional include defined by makefile
+#ifdef USE_MPI
+    #include "mpi.h"
+#endif
+
+// our own headers
 #include "pll/pll.h"
 #include "main.h"
 
+// define macros to make code more readable
+#ifdef USE_MPI
+    #define IF_MAIN_THREAD if (MPI::COMM_WORLD.Get_rank() == 0)
+#else
+    #define IF_MAIN_THREAD if (true)
+#endif
+
 using namespace std;
 
-/**
- * Creates a PLL instance given an alignment and a partition file
+#ifdef USE_MPI
+MPI_Datatype ModelScoreMPI;
+
+void initMpiTypes ()
+{
+    int blocks[2]         = {9, 12};
+    MPI_Datatype types[2] = {MPI_DOUBLE, MPI_CHAR};
+
+    MPI_Aint displacements[2];
+    MPI_Aint dblex;
+
+    MPI_Type_extent(MPI_DOUBLE, &dblex);
+
+    displacements[0] = static_cast<MPI_Aint>(0);
+    displacements[1] = dblex*9;
+
+    MPI_Type_struct(2, blocks, displacements, types, &ModelScoreMPI);
+    MPI_Type_commit (&ModelScoreMPI);
+}
+#endif
+
+/*
+ * Returns the number of free parameters for a particular model.
+ */
+int countFreeParameters (string model, int taxaCount)
+{
+    // parameters:
+    // frequencies -> 3
+    // alpha param -> 1
+    // num of taxa -> 2 * taxaCount - 3
+    // subst model -> in interval [0-5] (added at the end of this function)
+    int r = 3 + 1 + 2 * taxaCount - 3;
+
+    // sanity check of the subst model
+    if (model[0] != '0' || model.length() != 11) {
+        cout << "Wrong  model string '" << model << "', ignoring those parameters." << endl;
+        return r;
+    }
+
+    // count how many parameters the subst model has.
+    // (assuming a model in the form of '0,1,2,3,2,0',
+    // this is just the highest number appearing in the string)
+    int h = 0;
+    char* p = strtok(const_cast<char*>(model.c_str()), ",");
+    while (p != NULL) {
+        h = max(h, atoi(p));
+        p = strtok(NULL, ",");
+    }
+
+    return r+h;
+}
+
+/*
+ * Prints a 4x4 matrix of NT substitution rates.
+ *
+ * @param sr    Subst rate matrix of type double[6]
+ */
+void printSubstMatrix (double* sr, ostream &os)
+{
+    auto pf = [](double v, ostream &os) {
+        os << fixed << setprecision(3) << setw(12) << v;
+    };
+
+    pf (-(sr[0]+sr[1]+sr[2]), os);
+    pf (sr[0], os);
+    pf (sr[1], os);
+    pf (sr[2], os);
+    os << endl;
+
+    pf (sr[0], os);
+    pf (-(sr[0]+sr[3]+sr[4]), os);
+    pf (sr[3], os);
+    pf (sr[4], os);
+    os << endl;
+
+    pf (sr[1], os);
+    pf (sr[3], os);
+    pf (-(sr[1]+sr[3]+sr[5]), os);
+    pf (sr[5], os);
+    os << endl;
+
+    pf (sr[2], os);
+    pf (sr[4], os);
+    pf (sr[5], os);
+    pf (-(sr[2]+sr[4]+sr[5]), os);
+    os << endl;
+}
+
+/*
+ * Creates a PLL instance given an alignment and a partition file.
  */
 void createPLL (
     const string alignmentFilename, pllQueue* parts,
@@ -45,18 +147,18 @@ void createPLL (
     pllLoadAlignment (inst, alignmentData, partitions);
 }
 
-/**
+/*
  * Destroys the instance and other objects that createPLL yielded.
  */
 void destroyPLL (pllAlignmentData* alignmentData, partitionList* partitions, pllInstance* inst)
 {
     // destroy everything created by createPLL
     pllAlignmentDataDestroy (alignmentData);
-    pllPartitionsDestroy    (inst, &partitions); // again, expects a **partitionList here
+    pllPartitionsDestroy    (inst, &partitions);
     pllDestroyInstance      (inst);
 }
 
-/**
+/*
  * Calculate the likelihood given a particular substitution model.
  *
  * @param   alignmentFilename
@@ -114,70 +216,7 @@ void analyzeModel (
     destroyPLL (alignmentData, partitions, inst);
 }
 
-/**
- *
- */
-int countFreeParameters (string model, int taxaCount)
-{
-    // parameters:
-    // frequencies -> 3
-    // alpha param -> 1
-    // num of taxa -> 2 * taxaCount - 3
-    // subst model -> in interval [0-5] (added later)
-    int r = 3 + 1 + 2 * taxaCount - 3;
-
-    // sanity check of the subst model
-    if (model[0] != '0' || model.length() != 11) {
-        cout << "Wrong  model string '" << model << "', ignoring those parameters." << endl;
-        return r;
-    }
-
-    // count how many parameters the subst model has.
-    // (assuming a model in the form of '0,1,2,3,2,0',
-    // this is just the highest number appearing in the string)
-    int h = 0;
-    char* p = strtok(const_cast<char*>(model.c_str()), ",");
-    while (p != NULL) {
-        h = max(h, atoi(p));
-        p = strtok(NULL, ",");
-    }
-
-    return r+h;
-}
-
-/**
- * Prints a 4x4 matrix of NT substitution rates
- *
- * @param sr    Subst rate matrix of type double[6]
- */
-void printSubstMatrix (double* sr, ostream &os)
-{
-    os << fixed << setprecision(3) << setw(12) << -(sr[0]+sr[1]+sr[2]);
-    os << fixed << setprecision(3) << setw(12) << sr[0];
-    os << fixed << setprecision(3) << setw(12) << sr[1];
-    os << fixed << setprecision(3) << setw(12) << sr[2];
-    os << endl;
-
-    os << fixed << setprecision(3) << setw(12) << sr[0];
-    os << fixed << setprecision(3) << setw(12) << -(sr[0]+sr[3]+sr[4]);
-    os << fixed << setprecision(3) << setw(12) << sr[3];
-    os << fixed << setprecision(3) << setw(12) << sr[4];
-    os << endl;
-
-    os << fixed << setprecision(3) << setw(12) << sr[1];
-    os << fixed << setprecision(3) << setw(12) << sr[3];
-    os << fixed << setprecision(3) << setw(12) << -(sr[1]+sr[3]+sr[5]);
-    os << fixed << setprecision(3) << setw(12) << sr[5];
-    os << endl;
-
-    os << fixed << setprecision(3) << setw(12) << sr[2];
-    os << fixed << setprecision(3) << setw(12) << sr[4];
-    os << fixed << setprecision(3) << setw(12) << sr[5];
-    os << fixed << setprecision(3) << setw(12) << -(sr[2]+sr[4]+sr[5]);
-    os << endl;
-}
-
-/**
+/*
  *
  */
 int main (int argc, char* argv[])
@@ -212,6 +251,12 @@ int main (int argc, char* argv[])
         }
     }
 
+    // init mpi
+#ifdef USE_MPI
+    MPI::Init (argc, argv);
+    initMpiTypes();
+#endif
+
     // check if PHYLIP alignment file is given in arguments
     if (optind >= argc) {
         cout << "No PHYLIP input file given, aborting." << endl;
@@ -219,16 +264,18 @@ int main (int argc, char* argv[])
     }
     string alignmentFilename = argv[optind];
 
-    // user output
-    cout << "Using PHYLIP input file '" << alignmentFilename;
-    switch (bf) {
-        case EMPIRICAL:
-            cout << " with empirical base frequencies." << endl;
-            break;
+    IF_MAIN_THREAD {
+        // user output
+        cout << "Using PHYLIP input file '" << alignmentFilename;
+        switch (bf) {
+            case EMPIRICAL:
+                cout << " with empirical base frequencies." << endl;
+                break;
 
-        case ML:
-            cout << " with ML estimated base frequencies." << endl;
-            break;
+            case ML:
+                cout << " with ML estimated base frequencies." << endl;
+                break;
+        }
     }
 
     // create a partition file containing only one partition
@@ -236,14 +283,21 @@ int main (int argc, char* argv[])
     // cannot take the partition via string parameter)
     pllAlignmentData* alignmentData = pllParseAlignmentFile (PLL_FORMAT_PHYLIP, alignmentFilename.c_str());
     string partitionFilename = alignmentFilename + ".partition";
-    ofstream partitionFile (partitionFilename.c_str());
-    if (!partitionFile.is_open()) {
-        cout << "Unable to write partition file '" << partitionFilename << "', aborting." << endl;
-        exit (0);
+    IF_MAIN_THREAD {
+        ofstream partitionFile (partitionFilename.c_str());
+        if (!partitionFile.is_open()) {
+            cout << "Unable to write partition file '" << partitionFilename << "', aborting." << endl;
+            exit (0);
+        }
+        cout << "Writing partition file '" << partitionFilename << "'." << endl;
+        partitionFile << "DNA, Partition = 1-" << alignmentData->sequenceLength << "\n";
+        partitionFile.close();
     }
-    cout << "Writing partition file '" << partitionFilename << "'." << endl;
-    partitionFile << "DNA, Partition = 1-" << alignmentData->sequenceLength << "\n";
-    partitionFile.close();
+
+    // make sure the partition file is written before other threads continue
+#ifdef USE_MPI
+    MPI_Barrier (MPI_COMM_WORLD);
+#endif
 
     // create a partition queue from the alignment
     int sequenceLength = alignmentData->sequenceLength;
@@ -260,23 +314,56 @@ int main (int argc, char* argv[])
     double  likelihood, aic, bic;
     double* substRates;
     string  treeString;
-    double  bestL =  1.0;    // best likelihood
-    double  bestA = -1.0;    // best AIC
-    double  bestB = -1.0;    // best BIC
-    double  bestS[6];        // best substitution matrix
-    string  bestM;           // best model
+    vector<std::string> model_strings;
+
+    ModelScore best;
+    best.likelihood =  1.0;
+    best.AIC        = -1.0;
+    best.BIC        = -1.0;
+
+#ifdef USE_MPI
+    // PLL does some output when reading the sequence above, and we don't
+    // want that ouput to appear in between the output of the main loop,
+    // so we wait until all threads are done with this
+    MPI_Barrier (MPI_COMM_WORLD);
+
+    // split up the models for mpi threads
+    for (unsigned int i = 0; i < MODELS.size(); i++) {
+        if ((i - MPI::COMM_WORLD.Get_rank()) % MPI::COMM_WORLD.Get_size() == 0) {
+            model_strings.push_back (MODELS[i]);
+        }
+    }
 
     // user output
-    cout << endl << "Analysing all " << MODEL_STRINGS.size() << " substitution models..." << endl;
-    if (verbose) {
-        cout << endl << "Model         Likelihood          AIC          BIC" << endl;
-        cout         << "----------- ------------ ------------ ------------" << endl;
+    if (MPI::COMM_WORLD.Get_rank() == 0) {
+        cout << endl << "Analysing all " << MODELS.size() << " substitution models..." << endl;
+        if (verbose) {
+            cout << endl;
+            cout << "MPI Model         Likelihood          AIC          BIC" << endl;
+            cout << "--- ----------- ------------ ------------ ------------" << endl;
+        }
     }
+
+    // the threads shall not print output before the table header is printed,
+    // so we wait here for the main thread
+    MPI_Barrier (MPI_COMM_WORLD);
+#else
+    // do all models
+    model_strings = MODELS;
+
+    // user output
+    cout << endl << "Analysing all " << MODELS.size() << " substitution models..." << endl;
+    if (verbose) {
+        cout << endl;
+        cout << "Model         Likelihood          AIC          BIC" << endl;
+        cout << "----------- ------------ ------------ ------------" << endl;
+    }
+#endif
 
     // try out every substitution model to find the best one
     // (PLL cannot reuse the data, so we have to do the input file reading
     // anew for every substitution model)
-    for (string model : MODEL_STRINGS) {
+    for (string model : model_strings) {
         // get the likelihood for the current model
         substRates = new double[6];
         analyzeModel(alignmentFilename, parts, model, bf, false, likelihood, substRates, treeString);
@@ -288,6 +375,9 @@ int main (int argc, char* argv[])
 
         // user output
         if (verbose) {
+#ifdef USE_MPI
+            cout << fixed << setw(3) << MPI::COMM_WORLD.Get_rank() << " ";
+#endif
             cout << model << " ";
             cout << fixed << setprecision(3) << setw(12) << likelihood << " ";
             cout << fixed << setprecision(3) << setw(12) << aic << " ";
@@ -296,13 +386,13 @@ int main (int argc, char* argv[])
 
         // if AIC and BIC are better for the current model than for a previous one,
         // store this model
-        if (bestA < 0.0 || bestB < 0.0 || ( aic < bestA && bic < bestB) ) {
-            bestL = likelihood;
-            bestA = aic;
-            bestB = bic;
-            bestM = model;
+        if (best.AIC < 0.0 || best.BIC < 0.0 || ( aic < best.AIC && bic < best.BIC) ) {
+            best.likelihood = likelihood;
+            best.AIC        = aic;
+            best.BIC        = bic;
+            strncpy(best.model, model.c_str(), 12);
             for (int i = 0; i < 6; i++) {
-                bestS[i] = substRates[i];
+                best.rates[i] = substRates[i];
             }
         }
 
@@ -310,43 +400,74 @@ int main (int argc, char* argv[])
         delete [] substRates;
     }
 
-    // user output
-    cout << "...done." << endl << endl;
-    cout << "Best model: " << bestM << endl;
-    cout << "Likelihood: " << bestL << endl;
-    cout << "AIC:        " << bestA << endl;
-    cout << "BIC:        " << bestB << endl;
-    cout << endl << "Substitution matrix:" << endl;
-    printSubstMatrix(bestS, cout);
+#ifdef USE_MPI
+    // main thread reduces results to actual best
+    if (MPI::COMM_WORLD.Get_rank() == 0) {
+        ModelScore nbest;
+        MPI_Status status;
 
-    // write subst matrix to file
-    string matrixFilename = alignmentFilename + ".matrix";
-    ofstream matrixFile (matrixFilename.c_str());
-    if (!matrixFile.is_open()) {
-        cout << endl << "Unable to write matrix file '" << matrixFilename << "'." << endl;
+        for (int i = 1; i < MPI::COMM_WORLD.Get_size(); i++) {
+            MPI_Recv(&nbest, 1, ModelScoreMPI, i, 0, MPI_COMM_WORLD, &status);
+
+            if (nbest.AIC < best.AIC && nbest.BIC < best.BIC) {
+                best.likelihood = nbest.likelihood;
+                best.AIC        = nbest.AIC;
+                best.BIC        = nbest.BIC;
+                strncpy(best.model, nbest.model, 12);
+                for (int i = 0; i < 6; i++) {
+                    best.rates[i] = nbest.rates[i];
+                }
+            }
+        }
     } else {
-        cout << endl << "Writing matrix file '" << matrixFilename << "'." << endl;
-        printSubstMatrix(bestS, matrixFile);
-        matrixFile.close();
+        // send results to main thread
+        MPI_Send(&best, 1, ModelScoreMPI, 0, 0, MPI_COMM_WORLD);
     }
+#endif
 
-    // run the ML tree search
-    cout << endl << "Running ML tree search with best model..." << endl;
-    analyzeModel(alignmentFilename, parts, bestM, bf, true, likelihood, substRates, treeString);
-    cout << "...done." << endl;
+    IF_MAIN_THREAD {
+        // user output
+        cout << "...done." << endl << endl;
+        cout << "Best model: " << best.model << endl;
+        cout << "Likelihood: " << best.likelihood << endl;
+        cout << "AIC:        " << best.AIC << endl;
+        cout << "BIC:        " << best.BIC << endl;
+        cout << endl << "Substitution matrix:" << endl;
+        printSubstMatrix(best.rates, cout);
 
-    // write tree to file
-    string treeFilename = alignmentFilename + ".tree";
-    ofstream treeFile (treeFilename.c_str());
-    if (!treeFile.is_open()) {
-        cout << "Unable to write tree file '" << treeFilename << "'." << endl;
-    } else {
-        cout << endl << "Writing tree file '" << treeFilename << "'." << endl;
-        treeFile << treeString;
-        treeFile.close();
+        // write subst matrix to file
+        string matrixFilename = alignmentFilename + ".matrix";
+        ofstream matrixFile (matrixFilename.c_str());
+        if (!matrixFile.is_open()) {
+            cout << endl << "Unable to write matrix file '" << matrixFilename << "'." << endl;
+        } else {
+            cout << endl << "Writing matrix file '" << matrixFilename << "'." << endl;
+            printSubstMatrix(best.rates, matrixFile);
+            matrixFile.close();
+        }
+
+        // run the ML tree search
+        cout << endl << "Running ML tree search with best model..." << endl;
+        analyzeModel(alignmentFilename, parts, best.model, bf, true, likelihood, substRates, treeString);
+        cout << "...done." << endl;
+
+        // write tree to file
+        string treeFilename = alignmentFilename + ".tree";
+        ofstream treeFile (treeFilename.c_str());
+        if (!treeFile.is_open()) {
+            cout << "Unable to write tree file '" << treeFilename << "'." << endl;
+        } else {
+            cout << endl << "Writing tree file '" << treeFilename << "'." << endl;
+            treeFile << treeString;
+            treeFile.close();
+        }
     }
 
     // clean up
     pllQueuePartitionsDestroy (&parts);
+#ifdef USE_MPI
+    MPI_Type_free (&ModelScoreMPI);
+    MPI_Finalize();
+#endif
     return 0;
 }
