@@ -7,6 +7,7 @@ pllprac
 
 **SYNOPSIS**  
     `pllprac [-e|m] [-v] phylip_file`  
+    `mpirun -np threads pllprac [-e|m] [-v] phylip_file` (if compiled via `make mpi`)
 
 **DESCRIPTION**  
     This program takes a phylip multiple sequence alignment file
@@ -23,8 +24,8 @@ pllprac
 **ENVIRONMENT**  
 * **PLL**:  In order to run this program, you need an installation
         of the Phylogenetic Likelihood Library (PLL), which can be
-        obtained from `http://www.libpll.org/`
+        obtained from http://www.libpll.org/
 * **MPI**: The program can be compiled with MPI support via `make mpi`.
 
 **AUTHOR**  
-    Lucas Czech `<lucas.czech@h-its.org>`
+    Lucas Czech <lucas.czech@h-its.org>
