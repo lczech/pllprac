@@ -187,7 +187,7 @@ void analyzeModel (
     pllInitModel (inst, partitions);
 
     // if user wishes, we take empirical base freqs instead of ML estimates
-    if (bf == EMPIRICAL) {
+    if (bf == t_EMPIRICAL) {
         pllSetFixedBaseFrequencies(partitions->partitionData[0]->empiricalFrequencies, 4, 0, partitions, inst);
         // (this also automatically resets optimizeBaseFrequencies)
     }
@@ -222,19 +222,28 @@ void analyzeModel (
 int main (int argc, char* argv[])
 {
     // command line dependend options
-    BaseFrequencyType   bf      = ML;       // option for using empirical vs ML base freqs
-    bool                verbose = false;    // for more user output
+    InformationCriterionType ic      = t_BIC;  // option for the information criterion
+    BaseFrequencyType        bf      = t_ML;   // option for using empirical vs ML base freqs
+    bool                     verbose = false;  // for more user output
 
     // parse command line arguments
     int c;
-    while ((c = getopt (argc, argv, "e::m::v::")) != -1) {
+    while ((c = getopt (argc, argv, "a::b::e::m::v::")) != -1) {
         switch (c) {
+            case 'a':
+                ic = t_AIC;
+                break;
+
+            case 'b':
+                ic = t_BIC;
+                break;
+
             case 'e':
-                bf = EMPIRICAL;
+                bf = t_EMPIRICAL;
                 break;
 
             case 'm':
-                bf = ML;
+                bf = t_ML;
                 break;
 
             case 'v':
@@ -268,12 +277,21 @@ int main (int argc, char* argv[])
         // user output
         cout << "Using PHYLIP input file '" << alignmentFilename;
         switch (bf) {
-            case EMPIRICAL:
-                cout << " with empirical base frequencies." << endl;
+            case t_EMPIRICAL:
+                cout << " with empirical base frequencies";
                 break;
 
-            case ML:
-                cout << " with ML estimated base frequencies." << endl;
+            case t_ML:
+                cout << " with ML estimated base frequencies";
+                break;
+        }
+        switch (ic) {
+            case t_AIC:
+                cout << " and Akaike information criterion." << endl;
+                break;
+
+            case t_BIC:
+                cout << " and Bayesian information criterion." << endl;
                 break;
         }
     }
@@ -316,20 +334,16 @@ int main (int argc, char* argv[])
     string  treeString;
     vector<std::string> model_strings;
 
+    // set to values indicating the first iteration of the main loop
     ModelScore best;
-    best.likelihood =  1.0;
+    best.likelihood =  0.0;
     best.AIC        = -1.0;
     best.BIC        = -1.0;
 
 #ifdef USE_MPI
-    // PLL does some output when reading the sequence above, and we don't
-    // want that ouput to appear in between the output of the main loop,
-    // so we wait until all threads are done with this
-    MPI_Barrier (MPI_COMM_WORLD);
-
     // split up the models for mpi threads
     for (unsigned int i = 0; i < MODELS.size(); i++) {
-        if ((i - MPI::COMM_WORLD.Get_rank()) % MPI::COMM_WORLD.Get_size() == 0) {
+        if ((signed)(i % MPI::COMM_WORLD.Get_size()) == MPI::COMM_WORLD.Get_rank()) {
             model_strings.push_back (MODELS[i]);
         }
     }
@@ -343,10 +357,6 @@ int main (int argc, char* argv[])
             cout << "--- ----------- ------------ ------------ ------------" << endl;
         }
     }
-
-    // the threads shall not print output before the table header is printed,
-    // so we wait here for the main thread
-    MPI_Barrier (MPI_COMM_WORLD);
 #else
     // do all models
     model_strings = MODELS;
@@ -384,9 +394,12 @@ int main (int argc, char* argv[])
             cout << fixed << setprecision(3) << setw(12) << bic << endl;
         }
 
-        // if AIC and BIC are better for the current model than for a previous one,
+        // if AIC / BIC is better for the current model than for a previous one,
         // store this model
-        if (best.AIC < 0.0 || best.BIC < 0.0 || ( aic < best.AIC && bic < best.BIC) ) {
+        if (
+            (ic == t_AIC && (best.AIC < 0.0 || aic < best.AIC)) ||
+            (ic == t_BIC && (best.BIC < 0.0 || bic < best.BIC))
+        ) {
             best.likelihood = likelihood;
             best.AIC        = aic;
             best.BIC        = bic;
@@ -409,7 +422,10 @@ int main (int argc, char* argv[])
         for (int i = 1; i < MPI::COMM_WORLD.Get_size(); i++) {
             MPI_Recv(&nbest, 1, ModelScoreMPI, i, 0, MPI_COMM_WORLD, &status);
 
-            if (nbest.AIC < best.AIC && nbest.BIC < best.BIC) {
+            if (
+                (ic == t_AIC && nbest.AIC < best.AIC) ||
+                (ic == t_BIC && nbest.BIC < best.BIC)
+            ) {
                 best.likelihood = nbest.likelihood;
                 best.AIC        = nbest.AIC;
                 best.BIC        = nbest.BIC;
@@ -420,7 +436,7 @@ int main (int argc, char* argv[])
             }
         }
     } else {
-        // send results to main thread
+        // other threads send their results to main thread
         MPI_Send(&best, 1, ModelScoreMPI, 0, 0, MPI_COMM_WORLD);
     }
 #endif

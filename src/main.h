@@ -4,9 +4,14 @@
 #include <vector>
 #include <string>
 
+enum InformationCriterionType {
+    t_AIC,
+    t_BIC
+};
+
 enum BaseFrequencyType {
-    EMPIRICAL,
-    ML
+    t_EMPIRICAL,
+    t_ML
 };
 
 // for testing

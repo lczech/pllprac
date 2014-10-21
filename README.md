@@ -6,7 +6,7 @@ pllprac
     using the Phylogenetic Likelihood Library (PLL).
 
 **SYNOPSIS**  
-    `pllprac [-e|m] [-v] phylip_file`
+    `pllprac [-a|b] [-e|m] [-v] phylip_file`
 
 **DESCRIPTION**  
     This program takes a phylip multiple sequence alignment file
@@ -17,8 +17,9 @@ pllprac
     The resulting tree is outputted to a file.
 
 **OPTIONS**  
-* `-e|m`: Use (E)mpirical base frequencies or (M)L estimates.
-* `-v`:   Verbose user output.  
+* `-a|b`: Use the (A)IC or (B)IC as criterion for the model. Default is BIC.
+* `-e|m`: Use (E)mpirical base frequencies or (M)L estimates. Default is ML.
+* `-v`:   Verbose user output.
 
 **ENVIRONMENT**  
 * **PLL**:  In order to run this program, you need an installation
